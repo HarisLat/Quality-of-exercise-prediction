@@ -1,0 +1,102 @@
+---
+title: "Predicting Quality of Dumbbel exercise"
+author: "Charilaos L"
+output: html_document
+---
+The goal of this project is to use maching learning algorithms to predict the quality of a Unilateral Dumbbel Biceps Curl exercise. We have data on six young healthy participants that were asked to perform 10 repetions of this exercise in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbel only halfway (Class C), lowering the dumbbel only halfway (Class D) and throwing the hips to the front (Class E).
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading the Data 
+
+The data are available in <http://groupware.les.inf.puc-rio.br/har>. They are split in training and test datasets that we download like this:
+
+```{r data}
+library(RCurl)
+myfile <- getURL('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', ssl.verifyhost=FALSE, ssl.verifypeer=FALSE)
+training<-read.csv(textConnection(myfile),header=T,na.strings=c('',"NA"))
+myfile2 <- getURL('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', ssl.verifyhost=FALSE, ssl.verifypeer=FALSE)
+testing<-read.csv(textConnection(myfile2),header=T,na.strings=c('',"NA"))
+```
+
+```{r data2}
+dim(training)
+```
+
+We can see that there are 19622 observations with 160 variables for each observation. However, most of the columns include missing values. So the next step is to clean the data to remove those variables. 
+
+## Cleaning the data 
+
+```{r cleaning, echo=TRUE}
+training<-training[,(colSums(is.na(training))==0)]
+testing<-testing[,(colSums(is.na(testing))==0)]
+dim(training)
+dim(testing)
+```
+
+We have reduced our variables to 60. Still we have a lot of information for a prediction model. Therefore, we remove all the non-numeric variables
+
+```{r cleaning2, echo=TRUE}
+numericalColumns<-which(lapply(training,class) %in% "numeric")
+numericalColumns<-c(numericalColumns,60)
+training<-training[,numericalColumns]
+testing<-testing[,numericalColumns]
+dim(training);dim(testing)
+```
+
+## Training and validation subsets 
+First we create a training subset with 75% of the original training data and the remaining observations are used for validation. 
+
+```{r training, echo=TRUE}
+set.seed(12031987)
+library(caret)
+InTrain<-createDataPartition(training$classe,p=3/4,list=FALSE)
+training2<-training[InTrain,]
+validation<-training[-InTrain,]
+dim(training2);dim(validation)
+```
+
+## Prediction Models
+
+We start our exploration of machine learning algorithms with a decision tree:
+```{r predicting, echo=TRUE}
+set.seed(125)
+library(rpart)
+fitDecTree<-train(classe~.,method='rpart',data=training2)
+print(fitDecTree$finalModel)
+ModelDecTree<-predict(fitDecTree,validation)
+confusionMatrix(ModelDecTree,validation$classe)
+```
+
+The prediction outcomes are not satisfying because the accuracy is 0.44, even worse that pure chance. Moreover, the model does not predict any class B or class D outcome. 
+
+Since the decision tree model was quite inaccurate, we test if a Random Forest fits the data more appropriately
+```{r predicting2, echo=TRUE}
+set.seed(125)
+library(randomForest)
+fitRF<-randomForest(classe~.,data=training2)
+ModelRF<-predict(fitRF,validation)
+varImpPlot(fitRF,cex=.5)
+confusionMatrix(ModelRF,validation$classe)
+```
+
+The random forest is far superior in comparison to the previous model, since the predictive accuracy has risen to 0.9969. The specificity and sensitivity are also very high for all classes. According to the Gini purity measure, the five variables of highest importance are: roll_belt, yaw_belt,  pitch_forearm,magnet_dumbbell_z, pitch_belt. Thus we could comment that belt sensors are better predictors for the quality of the dumbbel excercise. 
+
+## Out-of-Sample Error
+
+Given the accuracy of the Random Forest on the validation dataset, we calculate below the out-of-sample error
+```{r validation, echo=TRUE}
+out_of_sample_error<-1-confusionMatrix(ModelRF,validation$classe)$overall[[1]]
+out_of_sample_error
+```
+
+When the model is applied to the 20 test cases provided the results are shown below 
+
+```{r validation2, echo=TRUE}
+predFinal<-predict(fitRF,testing)
+predFinal
+```
+
+
